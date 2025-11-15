@@ -19,7 +19,8 @@ class ImageNetResNet(torch.nn.Module):
             task: str = 'multiclass_classification',
             model_name: str = 'resnet50',
             weights: str = 'IMAGENET1K_V2',
-            path_to_weights: str = None):
+            path_to_weights: str = None,
+            debug_save_path: str = None):
         super().__init__()
         self.img_size = img_size
         self.task = task
@@ -28,6 +29,7 @@ class ImageNetResNet(torch.nn.Module):
         self.transforms = tt.Compose([
             tt.Normalize(mean = IMAGENET_MEAN, std = IMAGENET_STD)
         ])
+        self.debug_save_path = debug_save_path
         self.model = self._build_model(model_name, weights, path_to_weights)
         self.model.eval()
 
@@ -69,6 +71,13 @@ class ImageNetResNet(torch.nn.Module):
             assert x.min() >= -1. and x.max() <= 1.
             log.info('Detected input outside [0,1], rescaling from [-1,1] to [0,1]')
             x = (x + 1) / 2
+        # Save a debug preview (pre-normalization) if requested
+        if self.debug_save_path is not None:
+            try:
+                torchvision.utils.save_image(x, self.debug_save_path)
+                log.info(f"Saved classifier input preview (pre-normalization) to: {self.debug_save_path}")
+            except Exception as e:
+                log.warning(f"Failed to save debug image to {self.debug_save_path}: {e}")
         x = self.transforms(x)
         logits = self.model(x)
         if self.use_softmax_and_query_label:

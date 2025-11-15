@@ -103,6 +103,17 @@ class CounterfactualLossGeneralComponents(nn.Module):
             else:
                 output_probs = F.softmax(output, dim = 1)
                 output_prob = output_probs[:, self.classifier.query_label]
+                # For multiclass, threshold 0.5 is often too strict (1k classes).
+                # Use argmax to decide if query_label is the predicted class.
+                if self.classifier.task == 'multiclass_classification':
+                    pred_idx = output_probs.argmax(dim = 1)
+                    label = (pred_idx == self.classifier.query_label).long().item()
+                    if save_src_img_preds:
+                        self.src_img_probs = output_probs
+                        self.src_img_logits = output
+                    log.info(f"Argmax predicted class: {pred_idx.item()}, query_label: {self.classifier.query_label}")
+                    log.info(f"Probability of query class: {output_prob.item()}")
+                    return label
 
             if save_src_img_preds:
                 self.src_img_probs = output_probs
