@@ -8,7 +8,8 @@ Prereqs
 Setup (one-time)
 ```bash
 cd /Users/mgalkowski/Desktop/diffae/gcd
-python -m pip install -r requirements.txt
+conda create --name gcd python=3.11 -y
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu118
 ```
 
 Set variables
@@ -33,7 +34,8 @@ python src/main.py \
 ```
 
 Zebra example (label 340):
-```
+
+```bash
 python src/main.py \
   --config-path ../configs/single_image_gmc_mlp_proxy_training/imagenet/resnet/zebra \
   --config-name config \
@@ -42,9 +44,6 @@ python src/main.py \
   strategy.hf_split=train \
   strategy.hf_label=340 \
   strategy.hf_index=0 \
-  strategy.hf_token=$HF_TOKEN \  # optional
-  strategy.hf_cache_dir=/path/to/hf_cache \  # optional
-  strategy.dae_kwargs.path_ckpt="$DAE_CKPT" \
   device=cuda:0 \
   wandb.project=null
 ```

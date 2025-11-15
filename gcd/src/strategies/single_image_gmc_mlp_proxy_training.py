@@ -35,7 +35,6 @@ class SingleImageGMCMLPProxyTraining(Strategy):
 
     def __init__(
         self,
-        src_img_path: str = None,
         n_iters: int,
         n_steps_dae: int,
         n_steps_proxy: int,
@@ -49,14 +48,13 @@ class SingleImageGMCMLPProxyTraining(Strategy):
         mc_mlp_proxy_kwargs: dict,
         dae_kwargs: dict,
         ce_loss_kwargs: dict,
+        src_img_path: str = None,
         dae_type: str = 'default',
         # Optional HF dataset source for picking the source image by label
         hf_dataset_name: str = None,     # e.g., 'imagenet-1k'
         hf_split: str = 'train',
         hf_label: int = None,            # required if using HF
-        hf_index: int = 0,               # which occurrence of that label to use
-        hf_token: str = None,
-        hf_cache_dir: str = None):
+        hf_index: int = 0):               # which occurrence of that label to use
         """
         src_img_path - path of the source image
         n_iters - number of outer loop iterations
@@ -87,6 +85,7 @@ class SingleImageGMCMLPProxyTraining(Strategy):
 
         self.dae = self.get_dae_class(dae_type)(**dae_kwargs)
         self.proxy = GeneralMulticomponentMLP(**mc_mlp_proxy_kwargs)
+        print('\n\nInitializing CounterfactualLossGeneralComponents from kwargs: ', components_kwargs, '\n\n')
         self.ce_loss = CounterfactualLossFromGeneralComponents(**ce_loss_kwargs)
 
         # Load source image either from local path or HF dataset by label
@@ -98,8 +97,8 @@ class SingleImageGMCMLPProxyTraining(Strategy):
                 split = hf_split,
                 label = hf_label,
                 index = hf_index,
-                hf_token = hf_token,
-                cache_dir = hf_cache_dir,
+                hf_token = os.getenv('HF_TOKEN', None),
+                cache_dir = os.getenv('DATASET_CACHE', None),
                 image_size = self.dae.config.img_size if hasattr(self.dae, 'config') else 256
             )
         else:

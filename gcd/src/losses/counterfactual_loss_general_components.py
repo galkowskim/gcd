@@ -29,8 +29,6 @@ class CounterfactualLossGeneralComponents(nn.Module):
             hf_split: str = 'train',
             hf_label: int = None,
             hf_index: int = 0,
-            hf_token: str = None,
-            cache_dir: str = None,
             image_size: int = 256):
         """
         label_idx - label of interest (for counterfactual explanation)
@@ -46,11 +44,11 @@ class CounterfactualLossGeneralComponents(nn.Module):
         else:
             # Fallback to HF if params provided or env vars present
             ds_name = hf_dataset_name or os.getenv('HF_DATASET_NAME', None)
-            ds_split = hf_split or os.getenv('HF_SPLIT', 'train')
+            ds_split = hf_split
             ds_label = hf_label if hf_label is not None else os.getenv('HF_LABEL', None)
             ds_index = hf_index if hf_index is not None else int(os.getenv('HF_INDEX', 0))
-            ds_token = hf_token or os.getenv('HF_TOKEN', None)
-            ds_cache = cache_dir or os.getenv('HF_CACHE_DIR', None)
+            ds_token = os.getenv('HF_TOKEN', None)
+            ds_cache = os.getenv('DATASET_CACHE', None)
             if ds_name is None or ds_label is None:
                 raise ValueError("CounterfactualLossGeneralComponents: Provide src_img_path or HF dataset parameters (hf_dataset_name & hf_label).")
             ds_label = int(ds_label)
