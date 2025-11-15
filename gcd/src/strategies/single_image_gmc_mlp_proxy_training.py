@@ -85,7 +85,6 @@ class SingleImageGMCMLPProxyTraining(Strategy):
 
         self.dae = self.get_dae_class(dae_type)(**dae_kwargs)
         self.proxy = GeneralMulticomponentMLP(**mc_mlp_proxy_kwargs)
-        print('\n\nInitializing CounterfactualLossGeneralComponents from kwargs: ', components_kwargs, '\n\n')
         self.ce_loss = CounterfactualLossFromGeneralComponents(**ce_loss_kwargs)
 
         # Load source image either from local path or HF dataset by label
