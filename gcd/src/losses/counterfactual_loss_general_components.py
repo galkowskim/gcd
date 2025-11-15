@@ -3,6 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+import torchvision.transforms as T
+from datasets import load_dataset
+from PIL import Image
+import os
 
 import logging
 log = logging.getLogger(__name__)
@@ -15,11 +19,19 @@ class CounterfactualLossGeneralComponents(nn.Module):
     """
 
     def __init__(
-            self, 
+            self,
             clf,
             lpips_net: str,
-            src_img_path: str,
-            device: str):
+            src_img_path: str = None,
+            device: str = 'cuda:0',
+            # Optional: load source image from HF dataset by label if src_img_path is None
+            hf_dataset_name: str = None,    # e.g., 'imagenet-1k'
+            hf_split: str = 'train',
+            hf_label: int = None,
+            hf_index: int = 0,
+            hf_token: str = None,
+            cache_dir: str = None,
+            image_size: int = 256):
         """
         label_idx - label of interest (for counterfactual explanation)
         """
@@ -28,7 +40,29 @@ class CounterfactualLossGeneralComponents(nn.Module):
         self.to(self.device)
         self.classifier = clf.to(self.device)
         self.lpips = lpips.LPIPS(net = lpips_net).to(self.device)
-        self.load_src_img(src_img_path, device)
+        # Load source image: prefer local path, otherwise try HF dataset
+        if src_img_path is not None:
+            self.load_src_img(src_img_path, device)
+        else:
+            # Fallback to HF if params provided or env vars present
+            ds_name = hf_dataset_name or os.getenv('HF_DATASET_NAME', None)
+            ds_split = hf_split or os.getenv('HF_SPLIT', 'train')
+            ds_label = hf_label if hf_label is not None else os.getenv('HF_LABEL', None)
+            ds_index = hf_index if hf_index is not None else int(os.getenv('HF_INDEX', 0))
+            ds_token = hf_token or os.getenv('HF_TOKEN', None)
+            ds_cache = cache_dir or os.getenv('HF_CACHE_DIR', None)
+            if ds_name is None or ds_label is None:
+                raise ValueError("CounterfactualLossGeneralComponents: Provide src_img_path or HF dataset parameters (hf_dataset_name & hf_label).")
+            ds_label = int(ds_label)
+            self.load_src_img_from_hf(
+                dataset_name = ds_name,
+                split = ds_split,
+                label = ds_label,
+                index = ds_index,
+                hf_token = ds_token,
+                cache_dir = ds_cache,
+                image_size = image_size,
+            )
         self.clf_pred_label = self.get_clf_pred_label()
 
     def forward(self, x):
@@ -71,7 +105,7 @@ class CounterfactualLossGeneralComponents(nn.Module):
             else:
                 output_probs = F.softmax(output, dim = 1)
                 output_prob = output_probs[:, self.classifier.query_label]
-            
+
             if save_src_img_preds:
                 self.src_img_probs = output_probs
                 self.src_img_logits = output
@@ -90,14 +124,51 @@ class CounterfactualLossGeneralComponents(nn.Module):
             if save_src_img_preds:
                 self.src_img_probs = output_probs
                 self.src_img_logits = output
-        
+
         label = 1 if output_prob > 0.5 else 0
         log.info(f"Class predicted for source image: {label}")
         log.info(f"Probability of positive class: {output_prob.item()}")
         return label
-    
+
     def load_src_img(self, path, device):
         src_img = torchvision.io.read_image(path).unsqueeze(0) / 255
+        src_img = (src_img - 0.5) * 2
+        self.src_img = src_img.to(self.device)
+
+    @torch.no_grad()
+    def load_src_img_from_hf(
+        self,
+        dataset_name: str,
+        split: str,
+        label: int,
+        index: int = 0,
+        hf_token: str = None,
+        cache_dir: str = None,
+        image_size: int = 256,
+    ):
+        log.info(f'Loading source image from HF dataset: {dataset_name}, split: {split}, label: {label}, index: {index}')
+        kwargs = {}
+        if hf_token is not None:
+            kwargs['token'] = hf_token
+        if cache_dir is not None:
+            kwargs['cache_dir'] = cache_dir
+        ds = load_dataset(dataset_name, split=split, **kwargs)
+        ds_label = ds.filter(lambda ex: ex.get('label', None) == label)
+        if len(ds_label) == 0:
+            raise ValueError(f"No samples found for label {label} in dataset {dataset_name}/{split}")
+        if index >= len(ds_label) or index < 0:
+            raise IndexError(f"index {index} out of bounds for filtered dataset of size {len(ds_label)}")
+        sample = ds_label[index]
+        img = sample['image']
+        if not isinstance(img, Image.Image):
+            img = Image.fromarray(img)
+        transform = T.Compose([
+            T.CenterCrop(image_size),
+            T.Resize(image_size),
+            T.ToTensor(),          # [0,1]
+        ])
+        src_img = transform(img).unsqueeze(0)
+        # Scale to [-1,1] for loss computations (classifier handles rescale internally if needed)
         src_img = (src_img - 0.5) * 2
         self.src_img = src_img.to(self.device)
 
