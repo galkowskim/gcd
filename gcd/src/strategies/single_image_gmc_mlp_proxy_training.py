@@ -133,19 +133,24 @@ class SingleImageGMCMLPProxyTraining(Strategy):
         Load one source image from a HF dataset (e.g., 'imagenet-1k') by label id.
         """
         log.info(f'Loading source image from HF dataset: {dataset_name}, split: {split}, label: {label}, index: {index}')
-        kwargs = {}
+        # Use streaming iteration to avoid materializing a full filtered copy (much faster)
+        stream_kwargs = {"streaming": True}
         if hf_token is not None:
-            kwargs['token'] = hf_token
+            stream_kwargs["token"] = hf_token
         if cache_dir is not None:
-            kwargs['cache_dir'] = cache_dir
-        ds = load_dataset(dataset_name, split=split, **kwargs)
-        # Filter by label; select occurrence by index
-        ds_label = ds.filter(lambda ex: ex.get('label', None) == label)
-        if len(ds_label) == 0:
-            raise ValueError(f"No samples found for label {label} in dataset {dataset_name}/{split}")
-        if index >= len(ds_label) or index < 0:
-            raise IndexError(f"index {index} out of bounds for filtered dataset of size {len(ds_label)}")
-        sample = ds_label[index]
+            stream_kwargs["cache_dir"] = cache_dir
+        ds_stream = load_dataset(dataset_name, split=split, **stream_kwargs)
+
+        found = -1
+        sample = None
+        for ex in ds_stream:
+            if ex.get("label", None) == label:
+                found += 1
+                if found == index:
+                    sample = ex
+                    break
+        if sample is None:
+            raise ValueError(f"Could not find occurrence index {index} for label {label} in {dataset_name}/{split}")
         img = sample['image']
         if not isinstance(img, Image.Image):
             img = Image.fromarray(img)
