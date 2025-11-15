@@ -1,0 +1,73 @@
+### GCD ImageNet (zebra ↔ sorrel) — quick commands
+
+Prereqs
+- You already trained a DiffAE autoencoder at 256×256 and have its checkpoint path (last.ckpt).
+- You have a 256×256 source image (.png/.jpg) for zebra or sorrel.
+- Optional: a custom ImageNet classifier checkpoint (otherwise torchvision ResNet-50 pretrained is used).
+
+Setup (one-time)
+```bash
+cd /Users/mgalkowski/Desktop/diffae/gcd
+python -m pip install -r requirements.txt
+```
+
+Set variables
+```bash
+# Path to your DiffAE autoencoder EMA checkpoint (last.ckpt)
+export DAE_CKPT="/absolute/path/to/checkpoints/<your_autoenc_name>/last.ckpt"
+
+# Source image for the run (256×256 PNG/JPG)
+export SRC_IMG="/absolute/path/to/source_image.png"
+```
+
+Run: zebra (class 340, zebra→not‑zebra direction)
+```bash
+cd /Users/mgalkowski/Desktop/diffae/gcd/gcd
+python src/main.py \
+  --config-path ../configs/single_image_gmc_mlp_proxy_training/imagenet/resnet/zebra \
+  --config-name config \
+  strategy.src_img_path="$SRC_IMG" \
+  strategy.dae_kwargs.path_ckpt="$DAE_CKPT" \
+  device=cuda:0 \
+  wandb.project=null
+```
+
+Run: sorrel (class 339, sorrel→not‑sorrel direction)
+```bash
+cd /Users/mgalkowski/Desktop/diffae/gcd/gcd
+python src/main.py \
+  --config-path ../configs/single_image_gmc_mlp_proxy_training/imagenet/resnet/sorrel \
+  --config-name config \
+  strategy.src_img_path="$SRC_IMG" \
+  strategy.dae_kwargs.path_ckpt="$DAE_CKPT" \
+  device=cuda:0 \
+  wandb.project=null
+```
+
+Notes
+- The configs use the default 3‑channel DiffAE wrapper and a ResNet‑50 ImageNet classifier.
+- To use a custom classifier, add at the end of the command:
+  - `strategy.ce_loss_kwargs.components.clf.path_to_weights="/path/to/classifier.ckpt"`
+- Outputs are written under `gcd/gcd/outputs/<date_time>/strategy/`. Proxy data and candidate directions are in `strategy/proxy/...`.
+
+Direction transfer (apply a saved direction to another image)
+```bash
+# Example placeholders — update paths after a run completes
+export LOG_DIR="/Users/mgalkowski/Desktop/diffae/gcd/gcd/outputs/<date_time>/strategy"
+export DIR_PATH="$LOG_DIR/proxy/<some_subdir>/<direction_file>.pt"    # e.g., *_grad_*.pt
+export TARGET_IMG="/absolute/path/to/another_image.png"
+
+python src/direction_transfer.py \
+  --log-dir-path "$LOG_DIR" \
+  --direction-path "$DIR_PATH" \
+  --img-path "$TARGET_IMG" \
+  --subdir-name "transfer_run_1"
+```
+
+Tips for memory/time
+- If you see OOM, reduce: `strategy.dae_kwargs.batch_size` (e.g., 128) or narrow `strategy.dae_kwargs.std`.
+- To speed up renders, you can lower `strategy.dae_kwargs.T_render` (e.g., 20–50).
+
+Switching class direction
+- Zebra run uses `query_label=340`; sorrel run uses `query_label=339`. Use the matching config.
+
