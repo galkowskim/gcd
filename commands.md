@@ -32,6 +32,23 @@ python src/main.py \
   wandb.project=null
 ```
 
+Zebra example (label 340):
+```
+python src/main.py \
+  --config-path ../configs/single_image_gmc_mlp_proxy_training/imagenet/resnet/zebra \
+  --config-name config \
+  strategy.src_img_path=null \
+  strategy.hf_dataset_name=imagenet-1k \
+  strategy.hf_split=train \
+  strategy.hf_label=340 \
+  strategy.hf_index=0 \
+  strategy.hf_token=$HF_TOKEN \  # optional
+  strategy.hf_cache_dir=/path/to/hf_cache \  # optional
+  strategy.dae_kwargs.path_ckpt="$DAE_CKPT" \
+  device=cuda:0 \
+  wandb.project=null
+```
+
 Run: sorrel (class 339, sorrel→not‑sorrel direction)
 ```bash
 cd /Users/mgalkowski/Desktop/diffae/gcd/gcd
