@@ -295,7 +295,9 @@ class SingleImageGMCMLPProxyTraining(Strategy):
             device = self.device).repeat(n_directions).unsqueeze(1)
         grads_stack = torch.stack([*grads_dict.values()]).repeat_interleave(chunk_size, 0).squeeze()
         batch_latent_sem = self.src_latent_sem - step_sizes_stack * grads_stack
-        batch_latent_ddim = self.dae.make_batch_latent_ddim(self.src_latent_ddim)
+        # Match DDIM batch to the exact number of latent_sem samples (may be < dae.batch_size)
+        n_ls = batch_latent_sem.shape[0]
+        batch_latent_ddim = self.src_latent_ddim.repeat(n_ls, 1, 1, 1)
 
         # Generate images from line search latent sems
         log.info('Rendering line search images')
