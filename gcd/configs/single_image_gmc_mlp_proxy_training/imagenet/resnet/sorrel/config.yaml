@@ -31,7 +31,7 @@ strategy:
     output_dir: ${output_dir}/dae
 
   mc_mlp_proxy_kwargs:
-    shapes: [512, 256, 128, 64, 2]
+    shapes: [512, 256, 128, 64, 1001]
     activ_fn: sigmoid
     batch_size: 128
     n_val_batches: 1
