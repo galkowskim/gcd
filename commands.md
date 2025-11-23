@@ -12,27 +12,6 @@ conda create --name gcd python=3.11 -y
 pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu118
 ```
 
-Set variables
-```bash
-# Path to your DiffAE autoencoder EMA checkpoint (last.ckpt)
-export DAE_CKPT="/absolute/path/to/checkpoints/<your_autoenc_name>/last.ckpt"
-
-# Source image for the run (256×256 PNG/JPG)
-export SRC_IMG="/absolute/path/to/source_image.png"
-```
-
-Run: zebra (class 340, zebra→not‑zebra direction)
-```bash
-cd /Users/mgalkowski/Desktop/diffae/gcd/gcd
-python src/main.py \
-  --config-path ../configs/single_image_gmc_mlp_proxy_training/imagenet/resnet/zebra \
-  --config-name config \
-  strategy.src_img_path="$SRC_IMG" \
-  strategy.dae_kwargs.path_ckpt="$DAE_CKPT" \
-  device=cuda:0 \
-  wandb.project=null
-```
-
 Zebra example (label 340):
 
 ```bash
