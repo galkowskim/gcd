@@ -59,6 +59,19 @@ python src/direction_transfer.py \
   --subdir-name "transfer_run_1"
 ```
 
+```bash
+python src/direction_transfer_hf_batch.py \
+  --direction-path "/path/to/outputs/<date_time>/proxy/0/0_grad_*.pt" \
+  --log-dir-path "/path/to/outputs/<date_time>" \
+  --dataset-name imagenet-1k \
+  --split train \
+  --target-class 340 \
+  --n-samples 500 \
+  --step-size 1.0 \
+  --T-render 100 \
+  --subdir-name "hf_batch_zebra"
+```
+
 Tips for memory/time
 - If you see OOM, reduce: `strategy.dae_kwargs.batch_size` (e.g., 128) or narrow `strategy.dae_kwargs.std`.
 - To speed up renders, you can lower `strategy.dae_kwargs.T_render` (e.g., 20–50).
