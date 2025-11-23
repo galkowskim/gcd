@@ -153,6 +153,8 @@ class SingleImageGMCMLPProxyTraining(Strategy):
         img = sample['image']
         if not isinstance(img, Image.Image):
             img = Image.fromarray(img)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
         # Resize/center-crop to target image_size
         transform = T.Compose([
             T.CenterCrop(image_size),

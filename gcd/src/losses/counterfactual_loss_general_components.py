@@ -177,6 +177,8 @@ class CounterfactualLossGeneralComponents(nn.Module):
         img = sample['image']
         if not isinstance(img, Image.Image):
             img = Image.fromarray(img)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
         transform = T.Compose([
             T.CenterCrop(image_size),
             T.Resize(image_size),

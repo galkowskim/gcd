@@ -97,6 +97,8 @@ def iter_hf_by_label(dataset_name, split, label, start_index, n_samples, token=N
             count += 1
 
 def pil_to_tensor_01(img: Image.Image, image_size: int):
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
     transform = T.Compose([
         T.CenterCrop(image_size),
         T.Resize(image_size),
