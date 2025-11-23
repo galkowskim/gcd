@@ -27,7 +27,7 @@ def get_cfg(args):
     cfg = omegaconf.OmegaConf.load(path_cfg)
     return cfg
 
-def init_loss(cfg):
+def init_loss(cfg, args):
     loss_kwargs = cfg.strategy.ce_loss_kwargs
     loss_kwargs['make_output_dir'] = False
     clf_kwargs = loss_kwargs.components.clf
@@ -38,6 +38,11 @@ def init_loss(cfg):
     elif clf_name == 'ResNet':
         clf_kwargs.use_softmax_and_query_label = True
     clf = init_class_from_string(clf_name)(**clf_kwargs)
+    # Override target/query class if provided for this direction
+    if getattr(args, "direction_target_class", None) is not None:
+        if hasattr(clf, "query_label"):
+            clf.query_label = int(args.direction_target_class)
+            log.info(f"Set classifier query_label to direction target class: {clf.query_label}")
     comps_kwargs = loss_kwargs.components
     comps_name = comps_kwargs._target_.split('.')[-1]
     comps_kwargs.pop('_target_')
@@ -116,7 +121,7 @@ def main(args):
     log.info("Batch direction transfer (HF ImageNet)")
     cfg = get_cfg(args)
     device = torch.device(cfg.device)
-    loss = init_loss(cfg)
+    loss = init_loss(cfg, args)
     dae = init_dae(cfg)
     direction = load_direction(args.direction_path, device)
 
@@ -156,15 +161,26 @@ def main(args):
         # Log classifier probabilities (optional)
         with torch.no_grad():
             comps = loss.get_components(img_trans)
+            # Query-label probabilities
             prob_after = loss.get_query_label_probability(comps['predictions']).item()
             pred_before_logits = loss.components.classifier(img01)
             prob_before = loss.get_query_label_probability(pred_before_logits).item()
+            # Max-arg probabilities and classes (multiclass)
+            probs_after_all = torch.softmax(comps['predictions'], dim = 1)
+            best_after_prob, best_after_cls = probs_after_all.max(dim = 1)
+            probs_before_all = torch.softmax(pred_before_logits, dim = 1)
+            best_before_prob, best_before_cls = probs_before_all.max(dim = 1)
         csv_rows.append({
             "idx": int(idx),
             "orig_path": orig_name,
             "inpaint_path": trans_name,
             "prob_before": prob_before,
-            "prob_after": prob_after
+            "prob_after": prob_after,
+            "pred_before_best_cls": int(best_before_cls.item()),
+            "pred_before_best_prob": float(best_before_prob.item()),
+            "pred_after_best_cls": int(best_after_cls.item()),
+            "pred_after_best_prob": float(best_after_prob.item()),
+            "direction_target_class": int(getattr(args, "direction_target_class", -1))
         })
         n_done += 1
         if n_done % 25 == 0:
@@ -176,6 +192,7 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--direction-path', type=str, required=True, help='Path to direction .pt file from proxy run')
+    parser.add_argument('--direction-target-class', type=int, required=True, help='Target class id the direction was trained for (query label)')
     parser.add_argument('--log-dir-path', type=str, default=None, help='Log dir path with .hydra config (defaults to infer from direction path)')
     parser.add_argument('--dataset-name', type=str, default='imagenet-1k', help='HF dataset name')
     parser.add_argument('--split', type=str, default='train', help='HF split')
