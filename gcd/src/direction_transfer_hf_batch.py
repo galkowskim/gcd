@@ -41,7 +41,7 @@ def init_loss(cfg):
     comps_kwargs = loss_kwargs.components
     comps_name = comps_kwargs._target_.split('.')[-1]
     comps_kwargs.pop('_target_')
-    # We don't need src_img_path here; components will only be used for per-image eval
+    comps_kwargs.pop('clf', None)
     comps_kwargs.pop('src_img_path', None)
     comps = init_class_from_string(comps_name)(
         src_img_path = None,
