@@ -135,6 +135,7 @@ def iter_hf_by_label(
     predictions_df: Optional[pd.DataFrame] = None,
     filter_id: Optional[int] = None,
     n_skip: int = 0,
+    pred_index_scope: str = "global",  # 'global' or 'label'
 ):
     kwargs = {"streaming": True}
     if token is None:
@@ -146,22 +147,22 @@ def iter_hf_by_label(
     if cache_dir is not None:
         kwargs["cache_dir"] = cache_dir
     ds = load_dataset(dataset_name, split=split, **kwargs)
-    count_label_hits = 0
+    count_label_hits = 0           # counts examples with ex['label'] == label (zero-based)
     emitted = 0
     skipped = 0
-    global_idx = -1
-    for ex in ds:
-        global_idx += 1
+    for global_idx, ex in enumerate(ds):
         if ex.get('label', None) != label:
             continue
         # Count only matching label occurrences for start_index logic
-        if count_label_hits < start_index:
-            count_label_hits += 1
+        current_label_idx = count_label_hits  # zero-based index of label-matching sample
+        count_label_hits += 1
+        if current_label_idx < start_index:
             continue
 
         # If predictions filtering is requested, check it here
         if predictions_df is not None and filter_id is not None:
-            ex_idx = _extract_ex_idx(ex, fallback=None)
+            # Choose index to match predictions: global or label-only enumeration
+            ex_idx = global_idx if pred_index_scope == "global" else current_label_idx
             if ex_idx is None or ex_idx not in predictions_df.index:
                 # If we can't find a matching prediction idx, skip
                 continue
@@ -176,6 +177,10 @@ def iter_hf_by_label(
             skipped += 1
             continue
 
+        # Attach derived indices for downstream logging if needed
+        ex = dict(ex)
+        ex["_global_idx_enumerate"] = global_idx
+        ex["_label_idx_enumerate"] = current_label_idx
         yield ex
         emitted += 1
         if emitted >= n_samples:
@@ -229,10 +234,12 @@ def main(args):
         cache_dir=args.hf_cache_dir,
         predictions_df=predictions_df,
         filter_id=args.filter_id,
-        n_skip=args.n_skip
+        n_skip=args.n_skip,
+        pred_index_scope=args.pred_index_scope
     ):
         img_pil = ex['image'] if isinstance(ex['image'], Image.Image) else Image.fromarray(ex['image'])
-        idx = _extract_ex_idx(ex, fallback=n_done)
+        # Log the index used to match predictions for traceability
+        idx = ex.get("_global_idx_enumerate", n_done) if args.pred_index_scope == "global" else ex.get("_label_idx_enumerate", n_done)
         # Prepare tensors
         img01 = pil_to_tensor_01(img_pil, image_size).unsqueeze(0).to(device)
         img_m1p1 = to_dae_range(img01)
