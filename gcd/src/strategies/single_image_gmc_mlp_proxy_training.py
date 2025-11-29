@@ -14,6 +14,7 @@ from utils import *
 from datasets import load_dataset
 import torchvision.transforms as T
 from PIL import Image
+import os
 
 import logging
 logging.basicConfig(level = logging.INFO)
@@ -54,7 +55,13 @@ class SingleImageGMCMLPProxyTraining(Strategy):
         hf_dataset_name: str = None,     # e.g., 'imagenet-1k'
         hf_split: str = 'train',
         hf_label: int = None,            # required if using HF
-        hf_index: int = 0):               # which occurrence of that label to use
+        hf_index: int = 0,               # which occurrence of that label to use
+        # Optional prediction-based filtering: pick a source image the classifier predicts correctly
+        hf_predictions_csv: str = None,  # CSV with index 'idx' and column 'pred_label'
+        hf_pred_index_scope: str = 'global',  # 'global' (enumerate whole split) or 'label' (enumerate only matching label)
+        hf_n_skip_filtered: int = 0,     # skip first N after filtering (sharding/offset)
+        hf_filter_by_predictions: bool = False,  # enable filtering
+        ):
         """
         src_img_path - path of the source image
         n_iters - number of outer loop iterations
@@ -96,6 +103,10 @@ class SingleImageGMCMLPProxyTraining(Strategy):
                 split = hf_split,
                 label = hf_label,
                 index = hf_index,
+                predictions_csv = hf_predictions_csv,
+                pred_index_scope = hf_pred_index_scope,
+                n_skip_filtered = hf_n_skip_filtered,
+                filter_by_predictions = hf_filter_by_predictions,
                 hf_token = os.getenv('HF_TOKEN', None),
                 cache_dir = os.getenv('DATASET_CACHE', None),
                 image_size = self.dae.config.img_size if hasattr(self.dae, 'config') else 256
@@ -124,12 +135,20 @@ class SingleImageGMCMLPProxyTraining(Strategy):
         split: str,
         label: int,
         index: int = 0,
+        predictions_csv: str = None,
+        pred_index_scope: str = 'label',   # 'global' | 'label'
+        n_skip_filtered: int = 0,
+        filter_by_predictions: bool = False,
         hf_token: str = None,
         cache_dir: str = None,
         image_size: int = 256,
     ):
         """
         Load one source image from a HF dataset (e.g., 'imagenet-1k') by label id.
+        If filter_by_predictions is True, uses predictions_csv to keep only samples correctly
+        predicted as 'label'. You can choose how indices are matched via pred_index_scope:
+          - 'global': idx equals enumerate() over whole split (0-based)
+          - 'label' : idx equals enumerate() over only samples with ex['label'] == label (0-based)
         """
         log.info(f'Loading source image from HF dataset: {dataset_name}, split: {split}, label: {label}, index: {index}')
         # Use streaming iteration to avoid materializing a full filtered copy (much faster)
@@ -140,16 +159,50 @@ class SingleImageGMCMLPProxyTraining(Strategy):
             stream_kwargs["cache_dir"] = cache_dir
         ds_stream = load_dataset(dataset_name, split=split, **stream_kwargs)
 
-        found = -1
+        preds_df = None
+        if filter_by_predictions:
+            if predictions_csv is None or not os.path.exists(predictions_csv):
+                raise FileNotFoundError(f"Filtering by predictions requested but CSV not found: {predictions_csv}")
+            preds_df = pd.read_csv(predictions_csv, index_col='idx')
+            if 'pred_label' not in preds_df.columns:
+                raise ValueError(f"Predictions CSV missing 'pred_label' column: {predictions_csv}")
+
+        label_enum = -1        # counts only samples with matching label
+        global_enum = -1       # counts all samples
+        filtered_seen = -1     # counts only samples that passed predictions filter
         sample = None
         for ex in ds_stream:
-            if ex.get("label", None) == label:
-                found += 1
-                if found == index:
+            global_enum += 1
+            # keep only target label
+            if ex.get("label", None) != label:
+                continue
+            label_enum += 1
+
+            if filter_by_predictions:
+                idx_to_check = global_enum if pred_index_scope == 'global' else label_enum
+                if idx_to_check not in preds_df.index:
+                    continue
+                pred_label = int(preds_df.loc[idx_to_check, 'pred_label'])
+                if pred_label != int(label):
+                    continue
+                filtered_seen += 1
+                if filtered_seen < n_skip_filtered:
+                    continue
+                # pick by filtered order
+                if filtered_seen == index:
+                    sample = ex
+                    break
+            else:
+                # original behavior: pick by label occurrence
+                if label_enum == index:
                     sample = ex
                     break
         if sample is None:
-            raise ValueError(f"Could not find occurrence index {index} for label {label} in {dataset_name}/{split}")
+            if filter_by_predictions:
+                raise ValueError(f"Could not find filtered occurrence index {index} for label {label} in {dataset_name}/{split} "
+                                 f"(pred_index_scope={pred_index_scope}, n_skip_filtered={n_skip_filtered})")
+            else:
+                raise ValueError(f"Could not find occurrence index {index} for label {label} in {dataset_name}/{split}")
         img = sample['image']
         if not isinstance(img, Image.Image):
             img = Image.fromarray(img)
